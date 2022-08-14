@@ -1,9 +1,21 @@
 import React, { useState, useEffect } from 'react';
+import { useQuery, useMutation } from '@apollo/client';
 import { Jumbotron, Container, Col, Form, Button, Card, CardColumns } from 'react-bootstrap';
 
 import Auth from '../utils/auth';
-import { saveBook, searchGoogleBooks } from '../utils/API';
+import { GET_ME } from '../utils/queries';
+import { SAVE_BOOK } from '../utils/mutations';
+import { searchGoogleBooks } from '../utils/API';
 import { saveBookIds, getSavedBookIds } from '../utils/localStorage';
+
+export const getDescription = (desc, num) => {
+  let trimmedDesc = desc.substring(0, num);
+  if (desc.substring(0, Math.min(desc.length, desc.lastIndexOf(' '))) !== trimmedDesc.substring(0, Math.min(trimmedDesc.length, trimmedDesc.lastIndexOf(' ')))) {
+    trimmedDesc = trimmedDesc.substring(0, Math.min(trimmedDesc.length, trimmedDesc.lastIndexOf(' ')))
+    return trimmedDesc + '... ';
+  }
+  return desc;
+};
 
 const SearchBooks = () => {
   // create state for holding returned google api data
@@ -13,6 +25,24 @@ const SearchBooks = () => {
 
   // create state to hold saved bookId values
   const [savedBookIds, setSavedBookIds] = useState(getSavedBookIds());
+
+  // When user is logged in, add all saved books to localStorage
+  const token = Auth.loggedIn() ? Auth.getToken() : null;
+  const { loading, data } = useQuery(GET_ME);
+  const userData = data?.me || {};
+  const loadSavedBooks = async () => {
+    if (token && !loading && savedBookIds.length === 0) {
+      const savedBooksList = [];
+      if (userData.savedBooks) {
+        userData.savedBooks.forEach(book => {
+          savedBooksList.push(book.bookId);
+        });
+        setSavedBookIds(savedBooksList);
+      }
+    }
+  };
+
+  const [saveBook] = useMutation(SAVE_BOOK);
 
   // set up useEffect hook to save `savedBookIds` list to localStorage on component unmount
   // learn more here: https://reactjs.org/docs/hooks-effect.html#effects-with-cleanup
@@ -43,6 +73,7 @@ const SearchBooks = () => {
         title: book.volumeInfo.title,
         description: book.volumeInfo.description,
         image: book.volumeInfo.imageLinks?.thumbnail || '',
+        link: book.volumeInfo.previewLink
       }));
 
       setSearchedBooks(bookData);
@@ -65,11 +96,9 @@ const SearchBooks = () => {
     }
 
     try {
-      const response = await saveBook(bookToSave, token);
-
-      if (!response.ok) {
-        throw new Error('something went wrong!');
-      }
+      await saveBook({
+        variables: { book: bookToSave }
+      });
 
       // if book successfully saves to user's account, save book id to state
       setSavedBookIds([...savedBookIds, bookToSave.bookId]);
@@ -93,6 +122,7 @@ const SearchBooks = () => {
                   type='text'
                   size='lg'
                   placeholder='Search for a book'
+                  onClick={loadSavedBooks}
                 />
               </Col>
               <Col xs={12} md={4}>
@@ -113,15 +143,39 @@ const SearchBooks = () => {
         </h2>
         <CardColumns>
           {searchedBooks.map((book) => {
+            const bookImgUrl = book.image.split('zoom=1');
+            let bookImg = bookImgUrl[0] + 'zoom=0' + bookImgUrl[1];
+            const cutLength = 450;
             return (
               <Card key={book.bookId} border='dark'>
                 {book.image ? (
-                  <Card.Img src={book.image} alt={`The cover for ${book.title}`} variant='top' />
+                  <Card.Img src={bookImg.includes('edge=curl') ? bookImg : book.image} alt={`The cover for ${book.title}`} variant='top' />
                 ) : null}
                 <Card.Body>
                   <Card.Title>{book.title}</Card.Title>
                   <p className='small'>Authors: {book.authors}</p>
-                  <Card.Text>{book.description}</Card.Text>
+                  {book.description && <Card.Text>
+                    <span>{getDescription(book.description, cutLength)}</span>
+                    <Button onClick={e => {
+                      const toggleButton = e.target;
+                      const descriptionText = e.target.parentElement.firstChild;
+                      const bookDescription = book.description + ' ';
+
+                      if (descriptionText.textContent === bookDescription) {
+                        descriptionText.textContent = getDescription(book.description, cutLength);
+                        toggleButton.textContent = '▼';
+                      } else {
+                        descriptionText.textContent = bookDescription;
+                        toggleButton.textContent = '▲';
+                      }
+                    }} className={`btn-toggle${getDescription(book.description, cutLength) === book.description ? ' hidden' : ''}`}
+                      variant='link'>▼</Button>
+                  </Card.Text>}
+                  <Button
+                    href={book.link}
+                    target='_blank'
+                    className='btn-block btn-secondary'>
+                    Google Books Link</Button>
                   {Auth.loggedIn() && (
                     <Button
                       disabled={savedBookIds?.some((savedBookId) => savedBookId === book.bookId)}

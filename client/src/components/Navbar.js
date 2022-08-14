@@ -5,6 +5,7 @@ import SignUpForm from './SignupForm';
 import LoginForm from './LoginForm';
 
 import Auth from '../utils/auth';
+import { clearSavedBooks } from '../utils/localStorage';
 
 const AppNavbar = () => {
   // set modal display state
@@ -29,10 +30,14 @@ const AppNavbar = () => {
                   <Nav.Link as={Link} to='/saved'>
                     See Your Books
                   </Nav.Link>
-                  <Nav.Link onClick={Auth.logout}>Logout</Nav.Link>
+                  <Nav.Link onClick={Auth.logout} onClickCapture={clearSavedBooks}>Logout</Nav.Link>
                 </>
               ) : (
-                <Nav.Link onClick={() => setShowModal(true)}>Login/Sign Up</Nav.Link>
+                <Nav.Link onClick={() => {
+                  setShowModal(true);
+                  // If user is idle too long, this stops an error in trying to log back in
+                  localStorage.removeItem('id_token');
+                }}>Login/Sign Up</Nav.Link>
               )}
             </Nav>
           </Navbar.Collapse>
